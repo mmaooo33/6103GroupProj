@@ -1,6 +1,6 @@
 # SC6103 Distributed Flight Information System — UDP Message Protocol
 
-**Protocol version:** 1.0 (team proposal — review with B/C/D before implementation)  
+**Protocol version:** 1.0 (implemented team baseline; final group sign-off required)
 **Date:** 12 October 2026  
 **Language:** Java (client and server)  
 **Transport:** UDP (`java.net.DatagramSocket` / `DatagramPacket`)  
@@ -92,7 +92,7 @@ The `payloadLength` is `4` bytes because the operation-2 request contains one `i
 | **5** | `SET_AIRFARE` | `i32 flightId` + `f64 newAirfare` | `f64 currentAirfare` |
 | **6** | `ADD_SEATS` | `i32 flightId` + `i32 amountToAdd` | `i32 remainingSeats` |
 
-**Important: Operations 5 and 6 are team proposals and must be explicitly approved by B/C/D.**
+**Operations 5 and 6 are implemented team choices and must be described in the final report.**
 
 ### 3.1 Required business rules
 
@@ -182,11 +182,11 @@ On request arrival:
 - Suppressing duplicate execution must also suppress duplicate **reservation callbacks** under at-most-once mode.
 - This is **at-most-once execution, not exactly-once delivery**. A lost request may never run if all retry attempts are lost; a lost reply may still leave the client uncertain. In-memory reply history does not survive server restart; document that limitation.
 
-### 5.4 Mode selection (proposal)
+### 5.4 Mode selection (implemented CLI)
 
 ```text
-java Server <port> <at-least-once|at-most-once> [fault options]
-java Client <serverIp> <serverPort> <at-least-once|at-most-once> [fault options]
+java -cp out FlightServer <port> <at-least-once|at-most-once> [--drop-first-reply-op=1..6]
+java -cp out FlightClient <serverIp> <serverPort> <at-least-once|at-most-once> [--drop-first-request-op=1..6]
 ```
 
 Ensure both sides use the same selected mode in each experiment. The mode is a **process configuration**, not a new header field.

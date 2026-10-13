@@ -1,286 +1,123 @@
-\# Shared Java Interfaces — Proposal v1
+# Shared Java Interfaces
 
+Implementation baseline for the Java 17 client and server. All source files
+currently use the default package and must be compiled together. The byte-level
+wire format is defined in `protocol.md`.
 
+## Protocol model and codec
 
-\## General rules
+### `Message`
 
+Immutable message value with these public final fields:
 
+```java
+int messageType;
+long clientId;
+long requestId;
+int operationCode;
+int statusCode;
+byte[] payload;
+```
 
-\- Java 17.
+The constructor defensively copies `payload`.
 
-\- All Java source files are placed in src/.
+### `MessageCodec`
 
-\- No package declaration for this project version.
+```java
+public static byte[] encode(Message message);
+public static Message decode(byte[] data, int offset, int length);
+```
 
-\- Wire format follows protocol.md.
+The codec validates the 20-byte common header, protocol magic and version,
+message type, payload length, request ID rules and callback layout.
 
-\- Member D implements the shared classes below.
+### `PayloadWriter`
 
-\- Members B and C use the same shared implementation.
+```java
+public void writeUnsignedByte(int value);
+public void writeUnsignedShort(int value);
+public void writeInt(int value);
+public void writeUnsignedInt(long value);
+public void writeDouble(double value);
+public void writeString(String value);
+public byte[] toByteArray();
+```
 
-\- Malformed data or invalid encoding arguments throw
+### `PayloadReader`
 
-&#x20; IllegalArgumentException.
+```java
+public int readUnsignedByte();
+public int readUnsignedShort();
+public int readInt();
+public long readUnsignedInt();
+public double readDouble();
+public String readString();
+public void requireEnd();
+```
 
-\- Decoding must validate lengths before reading data.
+All numeric values use big-endian byte order. Strings use a two-byte unsigned
+UTF-8 byte-length prefix. `requireEnd()` rejects unexpected trailing data.
 
+## Protocol constants
 
+`Protocol` defines:
 
-\## 1. Message.java
+- message types: `REQUEST`, `REPLY`, `CALLBACK`;
+- operations: `SEARCH_FLIGHTS`, `GET_FLIGHT_DETAILS`, `RESERVE_SEATS`,
+  `MONITOR_FLIGHT`, `SET_AIRFARE`, `ADD_SEATS`;
+- status codes from `OK` through `PROTOCOL_ERROR`;
+- header, payload and UDP size limits.
 
+## Client interface
 
+`FlightClient` owns the console menu and operation-specific payload/result
+handling. It delegates transport to one `ReliableUdpClient` instance.
 
-Public final fields:
+Important `ReliableUdpClient` methods:
 
+```java
+public Message invoke(int operation, byte[] payload) throws IOException;
+public void setCallbackHandler(Consumer<Message> handler);
+public void listenForCallbacks(long durationMillis) throws IOException;
+```
 
+The transport owns one UDP socket for requests, replies and callbacks. Client
+code must not create another receiver for that socket. Retries reuse the exact
+same encoded request and therefore preserve `clientId` and `requestId`.
 
-&#x20;   int messageType
+## Server interface
 
-&#x20;   long clientId
+`FlightServer` is the single authoritative server implementation. It combines:
 
-&#x20;   long requestId
+- `FlightService` for all six operations;
+- `MonitorRegistry` for callback registrations and expiration;
+- `ReplyHistory` for at-most-once duplicate suppression;
+- `FaultInjector` for deterministic first-request/first-reply loss experiments;
+- `MessageCodec` and payload readers/writers for the shared wire format.
 
-&#x20;   int operationCode
+The compatibility launcher `DFlightServer` delegates to `FlightServer` and
+contains no separate server logic.
 
-&#x20;   int statusCode
-
-&#x20;   byte\[] payload
-
-
-
-Constructor:
-
-
-
-&#x20;   public Message(int messageType, long clientId, long requestId,
-
-&#x20;                  int operationCode, int statusCode, byte\[] payload)
-
-
-
-requestId uses long to represent unsigned 32-bit values:
-
-0 to 4294967295.
-
-
-
-\## 2. MessageCodec.java
-
-
-
-&#x20;   public static byte\[] encode(Message message)
-
-
-
-&#x20;   public static Message decode(byte\[] data, int offset, int length)
-
-
-
-encode returns the complete message: header plus payload.
-
-
-
-decode reads only the supplied offset/length range, validates
-
-the header and payload length, and returns a Message.
-
-
-
-\## 3. PayloadReader.java
-
-
-
-Constructor:
-
-
-
-&#x20;   public PayloadReader(byte\[] payload)
-
-
-
-Methods:
-
-
-
-&#x20;   public int readUnsignedByte()
-
-&#x20;   public int readUnsignedShort()
-
-&#x20;   public int readInt()
-
-&#x20;   public long readUnsignedInt()
-
-&#x20;   public double readDouble()
-
-&#x20;   public String readString()
-
-&#x20;   public void requireEnd()
-
-
-
-Reads advance an internal position.
-
-All numeric values use big-endian byte order.
-
-Strings use a u16 UTF-8 byte-length prefix.
-
-requireEnd throws if unread bytes remain.
-
-
-
-Departure time is read in this order:
-
-unsigned short year, unsigned byte month, day, hour, minute.
-
-
-
-\## 4. PayloadWriter.java
-
-
-
-Constructor:
-
-
-
-&#x20;   public PayloadWriter()
-
-
-
-Methods:
-
-
-
-&#x20;   public void writeUnsignedByte(int value)
-
-&#x20;   public void writeUnsignedShort(int value)
-
-&#x20;   public void writeInt(int value)
-
-&#x20;   public void writeUnsignedInt(long value)
-
-&#x20;   public void writeDouble(double value)
-
-&#x20;   public void writeString(String value)
-
-&#x20;   public byte\[] toByteArray()
-
-
-
-Writes append values in call order.
-
-All numeric values use big-endian byte order.
-
-Strings use a u16 UTF-8 byte-length prefix.
-
-Reject values outside the specified unsigned ranges.
-
-
-
-Departure time is written in this order:
-
-unsigned short year, unsigned byte month, day, hour, minute.
-
-
-
-\## 5. Protocol.java
-
-
-
-Public static final int constants:
-
-
-
-&#x20;   REQUEST = 1
-
-&#x20;   REPLY = 2
-
-&#x20;   CALLBACK = 3
-
-
-
-&#x20;   SEARCH\_FLIGHTS = 1
-
-&#x20;   GET\_FLIGHT\_DETAILS = 2
-
-&#x20;   RESERVE\_SEATS = 3
-
-&#x20;   MONITOR\_FLIGHT = 4
-
-&#x20;   SET\_AIRFARE = 5
-
-&#x20;   ADD\_SEATS = 6
-
-
-
-&#x20;   OK = 0
-
-&#x20;   BAD\_REQUEST = 1
-
-&#x20;   FLIGHT\_NOT\_FOUND = 2
-
-&#x20;   ROUTE\_NOT\_FOUND = 3
-
-&#x20;   INSUFFICIENT\_SEATS = 4
-
-&#x20;   INVALID\_ARGUMENT = 5
-
-&#x20;   UNKNOWN\_OPERATION = 6
-
-&#x20;   INTERNAL\_ERROR = 7
-
-&#x20;   PROTOCOL\_ERROR = 8
-
-
-
-&#x20;   HEADER\_LENGTH = 20
-
-&#x20;   VERSION = 1
-
-
-
-\## 6. Reliability integration — B and D
-
-
-
-D provides the reliability implementation.
-
-B integrates it into the server receive loop.
-
-
-
-In at-most-once mode:
-
-
-
-1\. Check history using (clientId, requestId) before executing.
-
-2\. If found, resend the cached reply without executing again.
-
-3\. Otherwise, execute the operation and encode its reply.
-
-4\. Cache the encoded reply before reply-loss simulation.
-
-5\. Duplicate reservations must not trigger another callback.
-
-
-
-In at-least-once mode:
-
-Execute each received request, including retries.
-
-
-
-The exact reliability class and method signatures still need
-
-to be agreed by B and D.
-
-
-
-\## Confirmation
-
-
-
-B, C and D should confirm this proposal before relying on it.
-
-Any interface change must be communicated to both B and C.
-
+## Invocation semantics
+
+Both client and server are started with the same mode:
+
+```text
+at-least-once
+at-most-once
+```
+
+At-least-once executes every delivered retry. At-most-once checks
+`ReplyHistory` using `(clientId, requestId)`, caches the encoded reply before
+reply-loss simulation, and replays that reply without executing the operation
+or callback again.
+
+## Integration rules
+
+1. Change the protocol only in coordination with client, server and codec code.
+2. Do not implement a second serializer in the client or server.
+3. A successful reservation triggers callbacks; `SET_AIRFARE` and `ADD_SEATS`
+   do not.
+4. Cache success and error replies in at-most-once mode.
+5. Run `ProjectSelfTest`, then the end-to-end and multi-computer tests described
+   in `README.md` before submission.

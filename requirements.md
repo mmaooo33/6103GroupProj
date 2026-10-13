@@ -6,7 +6,7 @@
 **Requirements document version:** 0.1 — working draft (12 October 2026)  
 **Source:** *Course.Project.for2026a.pdf*, pp. 1–4
 
-> **Document status:** This document separates **assignment requirements** from **team proposals / pending decisions**. The original course-project brief remains authoritative. Detailed byte-level protocol specifications will be recorded separately in `protocol.md` (Step 2).
+> **Document status:** This document separates assignment requirements from team implementation choices. The original course-project brief remains authoritative. The current byte-level protocol is recorded in `protocol.md` and implemented in the source tree; the group should complete a final sign-off before submission.
 
 ## 1. Project Objective and Scope
 
@@ -64,18 +64,18 @@ The server must keep flight information **at least in memory** while running. Pe
 ### FR-05 — Additional Idempotent Operation (Team-Defined)
 
 - **Assignment requirement:** Implement **one additional operation on flights** whose repeated execution with the same arguments has the same resulting state as one execution.
-- **Team proposal — NOT YET APPROVED:** `SET_AIRFARE(flightId, newAirfare)`. Repeating the same request sets the airfare to the same value.
+- **Current implementation choice:** `SET_AIRFARE(flightId, newAirfare)`. Repeating the same request sets the airfare to the same value.
 - **Acceptance check:** Two identical executions lead to the same final flight state as one execution; show the behavior through client–server communication.
 - **Documentation:** Describe the chosen operation and why it is idempotent in the lab report.
 
 ### FR-06 — Additional Non-Idempotent Operation (Team-Defined)
 
 - **Assignment requirement:** Implement **one additional operation on flights** for which repeated execution with the same arguments can change the resulting state again.
-- **Team proposal — NOT YET APPROVED:** `ADD_SEATS(flightId, amount)`. Each execution adds the specified number of available seats.
+- **Current implementation choice:** `ADD_SEATS(flightId, amount)`. Each execution adds the specified number of available seats.
 - **Acceptance check:** Two identical executions can produce a different final count from one execution. Use this operation in invocation-semantics experiments to demonstrate the risk of duplicate execution.
 - **Documentation:** Describe the chosen operation and why it is non-idempotent in the lab report.
 
-> **Decision needed:** B, C, and D must confirm the exact two additional operations before the operation codes and wire format are finalized. The two examples above are recommendations from the team plan, **not specified by the professor**.
+> These two operations are implemented consistently in the protocol, server and client. They are team choices, not professor-specified operations, and should be included in the final group sign-off and report.
 
 ## 3. Technical and System Requirements
 
@@ -115,7 +115,7 @@ Requirements for the reliability design:
 - Provide duplicate-request filtering and historical tracking as needed for at-most-once behavior.
 - Make the chosen invocation semantics selectable when running the system; the course brief suggests a client/server command-line argument as one possible approach.
 - Clearly describe the implementation and limitations in the report.
-- **Team design proposal:** Use client identifiers together with request identifiers to distinguish retries from new requests. Exact fields and history behavior will be fixed in `protocol.md`.
+- **Implemented team design:** Use client identifiers together with request identifiers to distinguish retries from new requests. Exact fields and history behavior are defined in `protocol.md`.
 
 ### TR-05 — Request-Loss and Reply-Loss Simulation
 
@@ -144,7 +144,7 @@ Requirements for the reliability design:
 
 - C, C++, Java, or any other language supporting inter-process communication is acceptable.
 - Using **different languages** for the client and server is **optional**.
-- **Current team proposal:** Java for both client and server, subject to group agreement.
+- **Current implementation:** Java 17 for both client and server.
 
 ## 4. Integration Requirements
 
@@ -217,16 +217,16 @@ The team should verify these end-to-end paths, rather than relying only on indiv
 - [ ] Report describes design, protocol, operations, fault tests and observed results; cover lists names and contribution percentages.
 - [ ] Final source package and lab report are submitted correctly to NTULearn by the deadline; demo is prepared for 17 October.
 
-## 9. Decisions to Confirm Before Implementation (A Coordinates)
+## 9. Implementation Decisions and Final Sign-Off (A Coordinates)
 
 | Decision | Status | People to agree |
 |---|---|---|
-| Programming language (proposed: Java) | **Pending** | A/B/C/D |
-| Two additional operations (proposed: `SET_AIRFARE`, `ADD_SEATS`) | **Pending** | A/B/C/D |
-| Shared message format: operation codes, field lengths, byte order, string encoding, status codes | **Step 2: pending** | A leads; B/C/D review |
-| Request/client identifiers, reply cache behavior, timeout/retry rules, fault simulation switches | **Step 2: pending** | A/D, with B/C |
-| Monitoring interval units and timeout/expiry implementation | **Step 2: pending** | A/B/C |
-| Build/run commands and test setup for multiple computers | **Pending** | B/C/D |
+| Programming language: Java 17 | **Implemented; group sign-off required** | A/B/C/D |
+| Additional operations: `SET_AIRFARE`, `ADD_SEATS` | **Implemented; group sign-off required** | A/B/C/D |
+| Shared message format: operation codes, field lengths, byte order, string encoding, status codes | **Implemented in `protocol.md` and codec** | A leads; B/C/D review |
+| Request/client identifiers, reply cache behavior, timeout/retry rules, fault simulation switches | **Implemented; integration testing required** | A/D, with B/C |
+| Monitoring interval units and timeout/expiry implementation | **Implemented; multi-client testing required** | A/B/C |
+| Build/run commands and test setup for multiple computers | **Documented in `README.md`; physical-computer test required** | B/C/D |
 | NTULearn report vs. code upload arrangement | **Check course site** | A |
 
-**Next action:** Agree on the pending decisions and publish `protocol.md` immediately, so Server, Client, and Reliability work against a single documented interface.
+**Next action:** Compile with Java 17, run the self-test and end-to-end acceptance cases, record actual experiment evidence, and complete the final group sign-off.
