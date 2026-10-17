@@ -2,6 +2,8 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketTimeoutException;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * UDP flight server.
@@ -17,6 +19,10 @@ public class FlightServer {
     private final ReplyHistory history = new ReplyHistory();
     private final InvocationSemantics semantics;
     private final FaultInjector replyLoss;
+    private final int perRequestReplyLossOperation;
+    // Each logical request is identified by the pair (clientId, requestId).
+    private record RequestKey(long clientId, long requestId) { }
+    private final Set<RequestKey> repliesDroppedForRequests = new HashSet<>();
 
     public FlightServer() {
         this(InvocationSemantics.AT_MOST_ONCE, 0);
@@ -24,15 +30,23 @@ public class FlightServer {
 
     public FlightServer(InvocationSemantics semantics,
                         int dropFirstReplyOperation) {
+        this(semantics, dropFirstReplyOperation, 0);
+    }
+
+    private FlightServer(InvocationSemantics semantics,
+                         int dropFirstReplyOperation,
+                         int perRequestReplyLossOperation) {
         this.semantics = java.util.Objects.requireNonNull(semantics);
         this.replyLoss = new FaultInjector(dropFirstReplyOperation);
+        this.perRequestReplyLossOperation = perRequestReplyLossOperation;
     }
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || args.length > 3) {
             System.out.println("Usage: java FlightServer <port>"
                     + " [at-least-once|at-most-once]"
-                    + " [--drop-first-reply-op=1..6]");
+                    + " [--drop-first-reply-op=1..6|"
+                    + "--drop-first-reply-per-request-op=1..6]");
             return;
         }
 
@@ -49,22 +63,30 @@ public class FlightServer {
 
         InvocationSemantics mode;
         int dropFirstReplyOperation = 0;
+        int perRequestReplyLossOperation = 0;
         try {
             mode = args.length >= 2
                     ? InvocationSemantics.parse(args[1])
                     : InvocationSemantics.AT_MOST_ONCE;
             if (args.length == 3) {
-                String prefix = "--drop-first-reply-op=";
-                if (!args[2].startsWith(prefix)) {
-                    throw new IllegalArgumentException(
-                            "Unknown option: " + args[2]);
-                }
-                dropFirstReplyOperation = Integer.parseInt(
-                        args[2].substring(prefix.length()));
-                if (dropFirstReplyOperation < 1
-                        || dropFirstReplyOperation > Protocol.ADD_SEATS) {
-                    throw new IllegalArgumentException(
-                            "Drop operation must be 1..6");
+                String oncePrefix = "--drop-first-reply-op=";
+                String perRequestPrefix = "--drop-first-reply-per-request-op=";
+                if (args[2].startsWith(oncePrefix)) {
+                    dropFirstReplyOperation = Integer.parseInt(
+                            args[2].substring(oncePrefix.length()));
+                    if (dropFirstReplyOperation < 1
+                            || dropFirstReplyOperation > Protocol.ADD_SEATS) {
+                        throw new IllegalArgumentException("Drop operation must be 1..6");
+                    }
+                } else if (args[2].startsWith(perRequestPrefix)) {
+                    perRequestReplyLossOperation = Integer.parseInt(
+                            args[2].substring(perRequestPrefix.length()));
+                    if (perRequestReplyLossOperation < 1
+                            || perRequestReplyLossOperation > Protocol.ADD_SEATS) {
+                        throw new IllegalArgumentException("Drop operation must be 1..6");
+                    }
+                } else {
+                    throw new IllegalArgumentException("Unknown option: " + args[2]);
                 }
             }
         } catch (NumberFormatException e) {
@@ -75,7 +97,8 @@ public class FlightServer {
             return;
         }
 
-        new FlightServer(mode, dropFirstReplyOperation).run(port);
+        new FlightServer(mode, dropFirstReplyOperation,
+                perRequestReplyLossOperation).run(port);
     }
 
     private void run(int port) throws Exception {
@@ -152,7 +175,16 @@ public class FlightServer {
                             + " status=" + reply.statusCode);
                 }
 
-                if (replyLoss.shouldDrop(request.operationCode)) {
+                boolean dropThisReply;
+                if (perRequestReplyLossOperation != 0) {
+                    RequestKey key = new RequestKey(request.clientId, request.requestId);
+                    dropThisReply = request.operationCode == perRequestReplyLossOperation
+                            && repliesDroppedForRequests.add(key);
+                } else {
+                    dropThisReply = replyLoss.shouldDrop(request.operationCode);
+                }
+
+                if (dropThisReply) {
                     System.out.println("SIMULATED REPLY LOSS request="
                             + request.requestId
                             + " operation=" + request.operationCode);
